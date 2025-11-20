@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LexTurca | Yönetim Paneli</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        /* (Stiller aynı, sadece kilit ikonu eklendi) */
+        :root { --bg-dark: #0f172a; --bg-card: #1e293b; --text-main: #f1f5f9; --gold: #d4af37; --border: rgba(255,255,255,0.1); }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg-dark); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; }
+        .sidebar { width: 260px; background: var(--bg-card); border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; }
+        .main-content { flex: 1; padding: 30px; overflow-y: auto; }
+        .panel { display: none; } .panel.active { display: block; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 25px; margin-bottom: 20px; }
+        .btn { padding: 10px 20px; background: var(--gold); color: black; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        input, textarea, select { background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: white; border-radius: 6px; padding: 12px; width: 100%; margin-bottom: 10px; }
+        .menu-item { padding: 12px; color: #94a3b8; cursor: pointer; display: flex; gap: 10px; }
+        .menu-item.active { color: var(--gold); border-left: 3px solid var(--gold); }
+        .locked-feature { opacity: 0.5; pointer-events: none; position: relative; }
+        .locked-badge { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #000; color: var(--gold); padding: 5px 10px; border-radius: 5px; font-size: 0.8rem; z-index: 10; border: 1px solid var(--gold); }
+    </style>
+</head>
+<body>
+
+    <div id="app-loader" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#0f172a; z-index:999; display:flex; justify-content:center; align-items:center; color:#d4af37;">
+        <i class="fas fa-circle-notch fa-spin" style="font-size:3rem;"></i>
+    </div>
+
+    <aside class="sidebar">
+        <h2 style="color:white; margin-bottom:30px;">Lex<span style="color:var(--gold)">Turca</span></h2>
+        <div class="menu-item active" onclick="showPanel('dashboard')"><i class="fas fa-home"></i> Genel Bakış</div>
+        <div class="menu-item" onclick="showPanel('cases')"><i class="fas fa-briefcase"></i> Davalarım</div>
+        <div class="menu-item" onclick="showPanel('writer')"><i class="fas fa-pen-fancy"></i> Hayalet Yazar</div>
+        <div class="menu-item" onclick="showPanel('conflict')"><i class="fas fa-search"></i> Çelişki Avcısı <i class="fas fa-lock" id="lock-icon-1" style="display:none; margin-left:auto; font-size:0.7rem;"></i></div>
+        <div class="menu-item" onclick="showPanel('judge')"><i class="fas fa-gavel"></i> Hakim Analitiği</div>
+        
+        <div style="margin-top:auto;">
+            <div id="plan-badge" style="text-align:center; background:rgba(255,255,255,0.1); padding:5px; border-radius:5px; font-size:0.8rem; margin-bottom:10px;">Plan Yükleniyor...</div>
+            <button class="btn" style="background:transparent; border:1px solid var(--gold); color:var(--gold); width:100%;" onclick="logout()">Çıkış</button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div id="panel-dashboard" class="panel active">
+            <h2>Genel Bakış</h2>
+            <div class="card" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:20px;">
+                <div><h3 style="color:#888;">Plan Durumu</h3><h1 id="dash-plan" style="color:var(--gold);">...</h1></div>
+                <div><h3 style="color:#888;">Dosyalar</h3><h1 id="stat-cases" style="color:white;">0</h1></div>
+                <div id="upgrade-box" style="display:none;">
+                    <h3 style="color:#888;">Yükselt</h3>
+                    <button class="btn" onclick="window.location.href='/'">Pro'ya Geç</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel-cases" class="panel">
+            <div style="display:flex; justify-content:space-between;"><h2>Davalarım</h2><button class="btn" onclick="document.getElementById('new-case-form').style.display='block'">+ Ekle</button></div>
+            <div id="new-case-form" class="card" style="display:none;">
+                <input type="text" id="case-no" placeholder="No"><input type="text" id="case-name" placeholder="Ad"><button class="btn" onclick="addCase()">Kaydet</button>
+            </div>
+            <div id="cases-list"></div>
+        </div>
+
+        <div id="panel-writer" class="panel">
+            <h2>Hayalet Yazar</h2>
+            <div class="card">
+                <input type="text" id="topic" placeholder="Konu..."><input type="text" id="tone" placeholder="Ton...">
+                <button class="btn" id="wBtn" onclick="writePetition()">Yaz</button>
+                <button class="btn" id="dlBtn" onclick="checkProFeature(downloadDocx)" style="background:#333; color:white; margin-left:10px; display:none;"><i class="fas fa-lock" id="word-lock"></i> Word İndir</button>
+                <div id="writer-result" style="margin-top:20px; color:#ccc; white-space: pre-wrap;"></div>
+            </div>
+        </div>
+
+        <div id="panel-conflict" class="panel">
+            <h2>Çelişki Avcısı (PDF)</h2>
+            <div class="card" id="conflict-card">
+                <input type="file" id="fileInput"><button class="btn" onclick="handleFileUpload()">Tara</button>
+                <div id="conflict-result" style="margin-top:20px; color:#ccc;"></div>
+            </div>
+        </div>
+        
+        <div id="panel-judge" class="panel">
+             <h2>Hakim Analitiği</h2>
+             <div class="card"><input type="text" id="judgeName" placeholder="Hakim..."><button class="btn" onclick="analyzeJudge()">Analiz</button><div id="judge-result" style="margin-top:20px; color:#ccc;"></div></div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- FIREBASE ANAHTARLARINI YAPIŞTIR ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyB41UrU2270hsUteBTG98QmMKVPHWzM5DM",
+            authDomain: "lexturca.firebaseapp.com",
+            projectId: "lexturca",
+            storageBucket: "lexturca.firebasestorage.app",
+            messagingSenderId: "213817374812",
+            appId: "1:213817374812:web:2a95d0ab834e7011b34e99"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        let currentUser = null;
+        let userPlan = 'free'; // Varsayılan
+        let currentPetitionText = "";
+
+        // BAŞLATMA
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                // Kullanıcının Planını Veritabanından Oku
+                db.collection('users').doc(user.uid).get().then(doc => {
+                    if (doc.exists) {
+                        userPlan = doc.data().plan || 'free';
+                    }
+                    applyPlanLimits(); // Arayüzü plana göre ayarla
+                    loadCases();
+                    document.getElementById('app-loader').style.display = 'none';
+                });
+            } else {
+                window.location.href = "/";
+            }
+        });
+
+        // --- PLAN KISITLAMALARI ---
+        function applyPlanLimits() {
+            const badge = document.getElementById('plan-badge');
+            const dashPlan = document.getElementById('dash-plan');
+            const lockIcon1 = document.getElementById('lock-icon-1');
+            const wordLock = document.getElementById('word-lock');
+            const conflictCard = document.getElementById('conflict-card');
+            const upgradeBox = document.getElementById('upgrade-box');
+
+            if (userPlan === 'pro') {
+                // PRO KULLANICI
+                badge.innerText = "PROFESYONEL PAKET";
+                badge.style.color = "var(--gold)";
+                dashPlan.innerText = "Profesyonel";
+                
+                // Kilitleri kaldır
+                lockIcon1.style.display = 'none';
+                wordLock.className = "fas fa-file-word"; // İkonu değiştir
+            } else {
+                // FREE KULLANICI
+                badge.innerText = "BAŞLANGIÇ PAKETİ";
+                badge.style.color = "#ccc";
+                dashPlan.innerText = "Başlangıç";
+                upgradeBox.style.display = "block"; // Yükseltme önerisi göster
+
+                // Kilitleri koy
+                lockIcon1.style.display = 'inline';
+                
+                // Çelişki Avcısı'nı kilitle (Görsel olarak)
+                conflictCard.style.opacity = "0.5";
+                conflictCard.innerHTML += `<div class="locked-badge">Sadece PRO Paket</div>`;
+                conflictCard.style.pointerEvents = "none"; // Tıklamayı engelle
+            }
+        }
+
+        // Özellik Kontrol Fonksiyonu (Butonlar için)
+        function checkProFeature(callback) {
+            if (userPlan === 'pro') {
+                callback();
+            } else {
+                alert("🚧 Bu özellik sadece Profesyonel Pakette mevcuttur.\n\nWord İndirme ve PDF Analizi için paketinizi yükseltin.");
+            }
+        }
+
+        // --- API İŞLEMLERİ ---
+        async function writePetition() {
+            const topic = document.getElementById('topic').value;
+            const tone = document.getElementById('tone').value;
+            document.getElementById('wBtn').innerText = "Yazılıyor...";
+            
+            try {
+                const res = await fetch('/api/yazar', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({konu:topic, ton:tone})});
+                const d = await res.json();
+                currentPetitionText = d.text;
+                document.getElementById('writer-result').innerText = d.text;
+                document.getElementById('dlBtn').style.display = 'inline-flex';
+            } catch(e) { alert("Hata"); }
+            document.getElementById('wBtn').innerText = "Yaz";
+        }
+
+        function downloadDocx() {
+            // Bu fonksiyonu sadece checkProFeature üzerinden çağıracağız
+            // ... (Word indirme kodu aynı)
+        }
+
+        // ... (Diğer fonksiyonlar: addCase, loadCases, logout vb. eski kodla aynı) ...
+        
+        function showPanel(id) {
+            // Eğer Free ise ve Çelişki Avcısı'na tıkladıysa uyarı ver ama yine de göster (Zaten kilitli)
+            if(id === 'conflict' && userPlan === 'free') {
+                // İstersen burada alert verip açtırmayabilirsin
+            }
+            document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+            document.getElementById('panel-'+id).classList.add('active');
+        }
+        
+        function logout() { auth.signOut().then(()=>window.location.href="/"); }
+        
+        // Basit Veritabanı İşlemleri (Eksiksiz olması için)
+        function addCase() {
+            const no = document.getElementById('case-no').value;
+            const name = document.getElementById('case-name').value;
+            db.collection('users').doc(currentUser.uid).collection('cases').add({
+                no:no, name:name, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                document.getElementById('new-case-form').style.display='none';
+                loadCases();
+            });
+        }
+        function loadCases() {
+            db.collection('users').doc(currentUser.uid).collection('cases').orderBy('createdAt','desc').get().then(snap => {
+                const list = document.getElementById('cases-list');
+                list.innerHTML = "";
+                let count = 0;
+                snap.forEach(doc => { count++; list.innerHTML += `<div class="card" style="border-left:4px solid var(--gold)"><h3>${doc.data().no} - ${doc.data().name}</h3></div>`; });
+                document.getElementById('stat-cases').innerText = count;
+            });
+        }
+        
+        async function analyzeJudge() {
+             const name = document.getElementById('judgeName').value;
+             const res = await fetch('/api/hakim-analiz', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({hakimAdi:name})});
+             const d = await res.json();
+             document.getElementById('judge-result').innerHTML = `<h3>${d.ad}</h3><p style="color:var(--success)">${d.egilim}</p><p>${d.ipucu}</p>`;
+        }
+    </script>
+</body>
+</html>
